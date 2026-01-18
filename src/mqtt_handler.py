@@ -1,6 +1,8 @@
 """
 MQTT处理模块 - 处理MQTT连接和数据接收
 """
+import os
+
 import paho.mqtt.client as mqtt
 import json
 import logging
@@ -63,8 +65,12 @@ class MQTTHandler:
 
         try:
             if system == "Windows":
-                subprocess.Popen(["mosquitto","-c", "C:\Program Files\mosquitto\mosquitto.conf", "-v"],
-                                 creationflags=subprocess.CREATE_NEW_CONSOLE)
+                config_path = os.path.join(os.path.dirname(__file__), "..", "config", "mosquitto.conf")
+                config_path = os.path.abspath(config_path)  # 转为绝对路径
+                subprocess.Popen(
+                    ["mosquitto", "-c",config_path, "-v"],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE)
+
             elif system == "Linux":
                 subprocess.Popen(["mosquitto", "-d"])
             elif system == "Darwin":  # macOS
