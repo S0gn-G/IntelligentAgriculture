@@ -14,10 +14,34 @@
 
 ## 安装说明
 
-### 1. 环境要求
+### 一、在开发环境安装
+
+#### 1. 环境要求
 - Python 3.7+
 - mosquitto MQTT代理
 
-### 2. 安装依赖
+#### 2. 安装依赖
 ```bash
 pip install -r requirements.txt
+```
+
+### 二、在服务器部署
+
+1.给脚本执行权限：
+```bash
+chmod +x setup-ubuntu-env.sh
+```
+2.运行安装脚本：
+```bash
+./setup-ubuntu-env.sh
+```
+
+3.启动系统：
+```bash
+./start.sh
+```
+
+4.停止系统：
+```bash
+./stop.sh
+```
