@@ -59,33 +59,120 @@ class MQTTHandler:
             return False
 
     def start_mqtt_broker(self) -> bool:
-        """启动MQTT代理（mosquitto）"""
+        """启动MQTT代理（mosquitto）- 修复僵死问题"""
         system = platform.system()
         logger.info(f"正在尝试启动MQTT代理 ({system})...")
 
         try:
-            if system == "Windows":
-                config_path = os.path.join(os.path.dirname(__file__), "..", "config", "mosquitto.conf")
-                config_path = os.path.abspath(config_path)  # 转为绝对路径
-                subprocess.Popen(
-                    ["mosquitto", "-c",config_path, "-v"],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE)
+            # 获取项目根目录的config/mosquitto.conf配置文件
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),  # 从src回到项目根目录
+                "config",
+                "mosquitto.conf"
+            )
+            config_path = os.path.abspath(config_path)  # 转为绝对路径
 
+            logger.info(f"使用配置文件: {config_path}")
+
+            if not os.path.exists(config_path):
+                logger.error(f"MQTT配置文件不存在: {config_path}")
+                logger.error("请确保项目包含 config/mosquitto.conf 文件")
+                return False
+
+            # 检查配置文件内容
+            try:
+                with open(config_path, 'r') as f:
+                    config_content = f.read()
+
+                # 确保配置文件有基本的监听设置
+                if "listener" not in config_content:
+                    logger.warning("配置文件中缺少 'listener' 设置，添加默认监听配置")
+                    # 创建一个临时配置文件
+                    temp_config = config_path + ".tmp"
+                    with open(temp_config, 'w') as f:
+                        f.write("listener 1883 0.0.0.0\n")
+                        f.write("allow_anonymous true\n")
+                        f.write(config_content)
+                    config_path = temp_config
+            except Exception as e:
+                logger.error(f"读取配置文件失败: {e}")
+
+            if system == "Windows":
+                # Windows启动
+                subprocess.Popen(
+                    ["mosquitto", "-c", config_path, "-v"],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE)
             elif system == "Linux":
-                subprocess.Popen(["mosquitto", "-d"])
+                # Linux启动 - 使用正确的守护进程参数
+                cmd = ["mosquitto", "-c", config_path]
+                logger.info(f"启动命令: {' '.join(cmd)}")
+
+                # 方法1: 使用nohup避免僵死
+                try:
+                    # 创建日志文件
+                    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+                    os.makedirs(log_dir, exist_ok=True)
+                    log_file = os.path.join(log_dir, "mosquitto.log")
+
+                    # 使用nohup启动，避免僵死
+                    with open(log_file, 'a') as log_f:
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=log_f,
+                            stderr=subprocess.STDOUT,
+                            preexec_fn=os.setpgrp,  # 创建新的进程组
+                            start_new_session=True  # 新会话
+                        )
+
+                    logger.info(f"Mosquitto进程PID: {process.pid}")
+
+                except Exception as e:
+                    logger.error(f"方法1启动失败: {e}")
+
+                    # 方法2: 尝试使用系统服务
+                    logger.info("尝试使用系统服务启动mosquitto...")
+                    try:
+                        subprocess.run(["sudo", "systemctl", "start", "mosquitto"],
+                                       check=True, capture_output=True, text=True)
+                        logger.info("使用系统服务启动成功")
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"系统服务启动失败: {e.stderr}")
+
+                        # 方法3: 直接在前台运行（用于调试）
+                        logger.info("尝试在前台运行mosquitto...")
+                        try:
+                            process = subprocess.Popen(
+                                ["mosquitto", "-c", config_path, "-v"],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                text=True
+                            )
+                            # 等待几秒检查输出
+                            time.sleep(2)
+                            if process.poll() is not None:
+                                output, _ = process.communicate(timeout=1)
+                                logger.error(f"Mosquitto启动失败，输出: {output[:200]}")
+                                return False
+                        except Exception as e2:
+                            logger.error(f"前台运行也失败: {e2}")
+                            return False
+
             elif system == "Darwin":  # macOS
-                subprocess.Popen(["mosquitto", "-d"])
+                subprocess.Popen(["mosquitto", "-c", config_path, "-d"])
 
             # 等待启动
             time.sleep(3)
             if self.check_mqtt_broker():
                 logger.info("MQTT代理启动成功")
                 return True
+            else:
+                logger.error("MQTT代理启动后无法连接")
+                return False
 
         except Exception as e:
             logger.error(f"启动MQTT代理失败: {e}")
-
-        return False
+            logger.error("请确保已安装mosquitto: sudo apt install mosquitto")
+            return False
 
     def install_mqtt_broker(self):
         """指导用户安装MQTT代理"""

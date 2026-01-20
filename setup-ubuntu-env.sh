@@ -398,56 +398,96 @@ create_startup_script() {
 
     cat > start.sh << 'EOF'
 #!/bin/bash
-# start.sh - 启动IoT监控系统
+# iot-final.sh - IoT系统最终启动脚本
 
-set -e
+echo ""
+echo "🚀 IoT监控系统 - 最终启动脚本"
+echo "============================="
 
-echo "🚀 启动IoT传感器数据监控系统..."
+# 停止系统服务
+echo "🛑 停止系统mosquitto服务..."
+sudo systemctl stop mosquitto 2>/dev/null || true
 
-# 检查是否在虚拟环境中
-if [ -z "$VIRTUAL_ENV" ]; then
-    echo "激活虚拟环境..."
-    source venv/bin/activate
+# 清理所有mosquitto进程
+echo "🧹 清理现有mosquitto进程..."
+sudo pkill -9 mosquitto 2>/dev/null || true
+sleep 2
+
+# 检查是否还有残留
+if ps aux | grep -q "[m]osquitto"; then
+    echo "❌ 仍有mosquitto进程运行，强制清理..."
+    # 使用更彻底的清理方法
+    for pid in $(ps aux | grep mosquitto | grep -v grep | awk '{print $2}'); do
+        sudo kill -9 $pid 2>/dev/null
+    done
+    sleep 1
 fi
 
-# 检查并启动mosquitto
-if ! pgrep -x "mosquitto" > /dev/null; then
-    echo "启动MQTT代理..."
-    sudo systemctl start mosquitto
+# 检查配置文件
+if [ ! -f "config/mosquitto.conf" ]; then
+    echo "❌ 配置文件不存在: config/mosquitto.conf"
+    exit 1
 fi
+
+# 使用配置文件启动mosquitto
+echo "🚀 启动项目mosquitto..."
+echo "配置文件: $(realpath config/mosquitto.conf)"
+
+# 在前台启动，但放入后台
+mosquitto -c config/mosquitto.conf &
+MOSQUITTO_PID=$!
+
+# 等待启动
+sleep 3
+
+# 检查是否启动成功
+if ps -p $MOSQUITTO_PID > /dev/null; then
+    echo "✅ Mosquitto启动成功 (PID: $MOSQUITTO_PID)"
+else
+    echo "❌ Mosquitto启动失败"
+    exit 1
+fi
+
+# 检查Python环境
+if [ ! -d "venv" ]; then
+    echo "❌ Python虚拟环境不存在"
+    kill $MOSQUITTO_PID 2>/dev/null || true
+    exit 1
+fi
+
+source venv/bin/activate
 
 # 获取本地IP
-get_local_ip() {
-    ip route get 1 | awk '{print $7;exit}'
-}
-
-LOCAL_IP=$(get_local_ip || echo "127.0.0.1")
+LOCAL_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "127.0.0.1")
 
 echo ""
-echo "=========================================="
-echo "🌐 IoT传感器数据监控系统"
-echo "=========================================="
-echo ""
-echo "📊 系统信息:"
+echo "📊 系统状态:"
+echo "   Mosquitto PID: $MOSQUITTO_PID"
+echo "   配置文件: config/mosquitto.conf"
 echo "   本地IP: $LOCAL_IP"
 echo "   Web端口: 5000"
 echo "   MQTT端口: 1883"
-echo "   数据库: data/iot_sensor_data.db"
 echo ""
 echo "🌐 访问地址:"
-echo "   本机访问: http://localhost:5000"
-echo "   网络访问: http://$LOCAL_IP:5000"
+echo "   http://localhost:5000"
+echo "   http://$LOCAL_IP:5000"
 echo ""
-echo "📋 API接口:"
-echo "   系统状态: http://localhost:5000/api/system/status"
-echo "   最新数据: http://localhost:5000/api/data/latest"
-echo ""
-echo "🚀 正在启动服务..."
+echo "🚀 启动IoT主程序..."
 echo "按 Ctrl+C 停止服务"
-echo "=========================================="
-echo ""
+echo "============================="
 
-# 运行主程序
+# 设置退出时清理
+cleanup() {
+    echo ""
+    echo "🛑 停止服务..."
+    kill $MOSQUITTO_PID 2>/dev/null || true
+    echo "✅ 服务已停止"
+    exit 0
+}
+
+trap cleanup INT TERM EXIT
+
+# 启动主程序
 python main.py
 EOF
 
