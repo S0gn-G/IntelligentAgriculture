@@ -1,6 +1,8 @@
 // JavaScript主文件 - 添加实时运行时间功能
 let temperatureChart = null;
-let currentHours = 1;
+let humidityChart = null;
+let currentTempHours = 1;
+let currentHumHours = 1;
 let serverStartTime = null;
 let uptimeUpdateInterval = null;
 
@@ -10,10 +12,12 @@ console.log("页面加载完成，开始初始化...");
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM加载完成，初始化图表...");
     initChart();
-    loadChartData();
+    loadChartData('temp');
+    loadChartData('hum');
 
     // 每30秒刷新一次图表数据
-    setInterval(loadChartData, 30000);
+    setInterval(() => loadChartData('temp'), 30000);
+    setInterval(() => loadChartData('hum'), 30000);
 
     // 初始加载系统数据
     loadSystemData();
@@ -25,61 +29,62 @@ document.addEventListener('DOMContentLoaded', function() {
 // 初始化图表
 function initChart() {
     console.log("初始化图表...");
-    const ctx = document.getElementById('temperatureChart');
+    const tempCtx = document.getElementById('temperatureChart');
+    const humCtx = document.getElementById('humidityChart');
 
-    if (!ctx) {
-        console.error("找不到图表canvas元素！");
-        return;
+    if (tempCtx) {
+        console.log("找到canvas元素，创建温度图表实例...");
+        temperatureChart = new Chart(tempCtx.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '温度 (°C)',
+                    data: [],
+                    borderColor: '#ff6b6b',
+                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: getCommonChartOptions('温度 (°C)', 0, 50)
+        });
     }
 
-    console.log("找到canvas元素，创建图表实例...");
-
-    temperatureChart = new Chart(ctx.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: '温度 (°C)',
-                data: [],
-                borderColor: '#ff6b6b',
-                backgroundColor: 'rgba(255, 107, 107, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.1,
-                pointRadius: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                }
+    if (humCtx) {
+        console.log("找到canvas元素，创建湿度图表实例...");
+        humidityChart = new Chart(humCtx.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '湿度 (%)',
+                    data: [],
+                    borderColor: '#4299e1',
+                    backgroundColor: 'rgba(66, 153, 225, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.1
+                }]
             },
-            scales: {
-                x: {
-                    display: true,
-                    title: {
-                        display: true,
-                        text: '数据点序列'
-                    }
-                },
-                y: {
-                    display: true,
-                    title: {
-                        display: true,
-                        text: '温度 (°C)'
-                    },
-                    min: 0,
-                    max: 50
-                }
-            }
-        }
-    });
+            options: getCommonChartOptions('湿度 (%)', 0, 100)
+        });
+    }
 
     console.log("图表初始化完成");
+}
+
+// 辅助函数：提取公共配置
+function getCommonChartOptions(yTitle, yMin, yMax) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { display: true, title: { display: true, text: '时间序列' } },
+            y: { display: true, title: { display: true, text: yTitle }, min: yMin, max: yMax }
+        }
+    };
 }
 
 // 启动实时运行时间更新
@@ -147,58 +152,54 @@ function updateRealTimeUptime() {
 }
 
 // 时间选择变化处理
-function handleTimeChange() {
-    console.log("时间选择改变:", currentHours);
-    const selector = document.getElementById('timeRange');
-    currentHours = parseFloat(selector.value);
-
-    console.log("新的时间范围:", currentHours, "小时");
+function handleTimeChange(type) {
+    const Selector = document.getElementById(`${type}TimeRange`);
+    switch (type) {
+        case 'temp':
+            console.log("时间选择改变:", currentTempHours);
+            currentTempHours = parseFloat(Selector.value);
+            console.log("新的时间范围:", currentTempHours, "小时");
+            break;
+        case 'hum':
+            console.log("时间选择改变:", currentHumHours);
+            currentHumHours = parseFloat(Selector.value);
+            console.log("新的时间范围:", currentHumHours, "小时");
+        default:
+            break;
+    } 
 
     // 显示加载状态
-    showChartLoading();
+    console.log("显示图表加载状态");
+    const canvas = document.getElementById(`${type}Chart`);
+    if (canvas)     canvas.style.opacity = '0.5';
+    const chartInfo = document.getElementById(`${type}chartInfo`);
+    if (chartInfo)  chartInfo.innerHTML = '正在加载数据...';
 
     // 加载新数据
-    loadChartData();
+    loadChartData(type);
 }
 
-// 显示图表加载状态
-function showChartLoading() {
-    console.log("显示图表加载状态");
-    const canvas = document.getElementById('temperatureChart');
-    if (canvas) {
-        canvas.style.opacity = '0.5';
-    }
+// 加载温度图表数据
+function loadChartData(type) {
+    const isTemp = type === 'temp';
+    const hours = isTemp ? currentTempHours : currentHumHours;
 
-    const chartInfo = document.getElementById('chartInfo');
-    if (chartInfo) {
-        chartInfo.innerHTML = '正在加载数据...';
-    }
-}
+    console.log(`加载${type}图表数据: ${hours}小时`);
 
-// 隐藏图表加载状态
-function hideChartLoading() {
-    console.log("隐藏图表加载状态");
-    const canvas = document.getElementById('temperatureChart');
-    if (canvas) {
-        canvas.style.opacity = '1';
-    }
-}
-
-// 加载图表数据
-function loadChartData() {
-    console.log(`加载图表数据: ${currentHours}小时`);
-
-    const url = `/api/data/history?device_id=SmartAgriculture_thermometer&hours=${currentHours}`;
+    const url = `/api/data/history?device_id=SmartAgriculture_thermometer&hours=${hours}`;
     console.log("请求URL:", url);
 
-    showChartLoading();
+    console.log("显示图表加载状态");
+    const canvas = document.getElementById(`${type}Chart`);
+    if (canvas)     canvas.style.opacity = '0.5';
+    const chartInfo = document.getElementById(`${type}chartInfo`);
+    if (chartInfo)  chartInfo.innerHTML = '正在加载数据...';
 
     fetch(url)
         .then(response => {
             console.log("收到响应，状态:", response.status);
-            if (!response.ok) {
+            if (!response.ok)
                 throw new Error(`HTTP错误 ${response.status}`);
-            }
             return response.json();
         })
         .then(data => {
@@ -206,23 +207,27 @@ function loadChartData() {
 
             if (data.status === 'success' && data.data && data.data.length > 0) {
                 console.log(`数据点数量: ${data.data.length}`);
-                updateChart(data.data);
+                updateChart(type, data.data);
             } else {
                 console.log("没有数据或状态不是success:", data);
-                showNoDataMessage();
+                showNoDataMessage(type);
             }
         })
         .catch(error => {
             console.error("加载图表数据失败:", error);
-            showNoDataMessage();
+            showNoDataMessage(type);
         });
 }
 
 // 用数据更新图表
-function updateChart(data) {
+function updateChart(type, data) {
+    const isTemp = type === 'temp';
+    const chart = isTemp ? temperatureChart : humidityChart;
+    const chartId = isTemp ? 'temperatureChart' : 'humidityChart';
+
     console.log("更新图表，数据:", data);
 
-    if (!temperatureChart) {
+    if (!chart) {
         console.error("图表未初始化！");
         return;
     }
@@ -231,7 +236,7 @@ function updateChart(data) {
 
     // 准备图表数据
     const labels = [];
-    const temperatureValues = [];
+    const values = [];
 
     // 取前100个点显示，避免图表过于拥挤
     const displayCount = Math.min(data.length, 100);
@@ -239,78 +244,85 @@ function updateChart(data) {
 
     for (let i = 0; i < data.length; i += step) {
         const item = data[i];
-        if (item && item.temperature !== undefined) {
-            labels.push(`点${labels.length + 1}`);
-            temperatureValues.push(item.temperature);
+        if (item && item.temperature && item.humidity !== undefined) {
+            labels.push(new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            values.push(isTemp ? item.temperature : item.humidity);
         }
     }
 
     console.log(`显示 ${labels.length} 个数据点`);
 
     // 更新图表数据
-    temperatureChart.data.labels = labels;
-    temperatureChart.data.datasets[0].data = temperatureValues;
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = values;
 
     // 动态调整Y轴范围
-    if (temperatureValues.length > 0) {
-        const minTemp = Math.min(...temperatureValues);
-        const maxTemp = Math.max(...temperatureValues);
-        const padding = 2;
+    if (values.length > 0) {
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        const padding = isTemp ? 2 : 5;
 
-        temperatureChart.options.scales.y.min = Math.max(0, minTemp - padding);
-        temperatureChart.options.scales.y.max = Math.min(50, maxTemp + padding);
+        chart.options.scales.y.min = Math.max(0, minVal - padding);
+        chart.options.scales.y.max = Math.min(isTemp ? 50 : 100, Math.ceil(maxVal + padding));
 
-        console.log(`温度范围: ${minTemp.toFixed(1)} - ${maxTemp.toFixed(1)}°C`);
+        console.log(`温度范围: ${minVal.toFixed(1)} - ${maxVal.toFixed(1)}°C`);
     }
 
     // 更新图表
-    temperatureChart.update();
-    hideChartLoading();
+    chart.update();
+    console.log("隐藏图表加载状态");
+
+    const canvas = document.getElementById(chartId);
+    if (canvas)  canvas.style.opacity = '1';
 
     // 更新图表信息显示
-    updateChartInfo(data.length, labels.length);
+    updateChartInfo(type, data.length, labels.length);
 
     console.log("图表更新完成");
 }
 
 // 更新图表信息显示
-function updateChartInfo(totalPoints, displayPoints) {
-    const chartInfo = document.getElementById('chartInfo');
+function updateChartInfo(type, totalPoints, displayPoints) {
+    const chartInfo = document.getElementById(`${type}chartInfo`);
     if (chartInfo) {
-        if (totalPoints > displayPoints) {
+        if (totalPoints > displayPoints)
             chartInfo.innerHTML = `显示 ${displayPoints} 个聚合点 (共 ${totalPoints} 个数据点)`;
-        } else {
+        else
             chartInfo.innerHTML = `显示 ${totalPoints} 个数据点`;
-        }
         console.log("图表信息:", chartInfo.innerHTML);
     }
 }
 
 // 显示无数据消息
-function showNoDataMessage() {
+function showNoDataMessage(type) {
+    const isTemp = type === 'temp';
+    const chart = isTemp ? temperatureChart : humidityChart;
+    const chartId = isTemp ? 'temperatureChart' : 'humidityChart';
+
     console.log("显示无数据消息");
 
-    if (!temperatureChart) {
+    if (!chart) {
         console.error("图表未初始化！");
         return;
     }
 
     // 清空图表
-    temperatureChart.data.labels = ['无数据'];
-    temperatureChart.data.datasets[0].data = [0];
+    chart.data.labels = ['无数据'];
+    chart.data.datasets[0].data = [0];
 
     // 设置Y轴范围为0-1
-    temperatureChart.options.scales.y.min = 0;
-    temperatureChart.options.scales.y.max = 1;
+    chart.options.scales.y.min = 0;
+    chart.options.scales.y.max = 1;
 
-    temperatureChart.update();
-    hideChartLoading();
+    chart.update();
+
+    console.log("隐藏图表加载状态");
+    const canvas = document.getElementById(chartId);
+    if (canvas)  canvas.style.opacity = '1';
 
     // 更新图表信息
-    const chartInfo = document.getElementById('chartInfo');
-    if (chartInfo) {
-        chartInfo.innerHTML = '暂无图表数据';
-    }
+    const chartInfo = document.getElementById(`${type}chartInfo`);
+    if (chartInfo)  chartInfo.innerHTML = '暂无图表数据';
 
     console.log("无数据消息已显示");
 }
@@ -483,7 +495,8 @@ function updateDataTable(data) {
 // 刷新数据函数
 function refreshData() {
     console.log("手动刷新数据");
-    loadChartData();
+    loadChartData('temp');
+    loadChartData('hum');
     loadSystemData();
     loadLatestSensorData();
 }
